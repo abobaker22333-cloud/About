@@ -1,0 +1,109 @@
+// 📂 ساختار پروژه آماده برای GitHub + Vercel
+
+papji-wins-gallery/ ├─ package.json ├─ next.config.js ├─ postcss.config.js ├─ tailwind.config.js ├─ .gitignore ├─ .env.example ├─ public/ │  ├─ favicon.ico │  └─ logo.png ├─ styles/ │  └─ globals.css ├─ lib/ │  └─ firebase.js └─ pages/ ├─ _app.js └─ index.js
+
+────────────────────────────── 📄 package.json ────────────────────────────── { "name": "papji-wins-gallery", "version": "1.0.0", "private": true, "scripts": { "dev": "next dev", "build": "next build", "start": "next start" }, "dependencies": { "autoprefixer": "10.4.20", "firebase": "10.12.0", "next": "14.2.5", "postcss": "8.4.41", "react": "18.3.1", "react-dom": "18.3.1", "tailwindcss": "3.4.10" } }
+
+────────────────────────────── 📄 next.config.js ────────────────────────────── /** @type {import('next').NextConfig} */ const nextConfig = { images: { remotePatterns: [ { protocol: 'https', hostname: '.googleusercontent.com' }, { protocol: 'https', hostname: '.gstatic.com' }, { protocol: 'https', hostname: '.firebaseapp.com' }, { protocol: 'https', hostname: '.firebasestorage.googleapis.com' } ] } }; module.exports = nextConfig;
+
+────────────────────────────── 📄 postcss.config.js ────────────────────────────── module.exports = { plugins: { tailwindcss: {}, autoprefixer: {}, } };
+
+────────────────────────────── 📄 tailwind.config.js ────────────────────────────── module.exports = { content: ['./pages//*.{js,jsx}', './components//.{js,jsx}', './app/**/.{js,jsx}', './styles/**/*.{css}'], theme: { extend: {} }, plugins: [], };
+
+────────────────────────────── 📄 .gitignore ────────────────────────────── /node_modules /.next /out .env* .DS_Store
+
+────────────────────────────── 📄 .env.example ────────────────────────────── NEXT_PUBLIC_FIREBASE_API_KEY= NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN= NEXT_PUBLIC_FIREBASE_PROJECT_ID= NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET= NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID= NEXT_PUBLIC_FIREBASE_APP_ID=
+
+────────────────────────────── 📄 styles/globals.css ────────────────────────────── @tailwind base; @tailwind components; @tailwind utilities;
+
+html, body, #__next { height: 100%; } body { @apply bg-gray-50 text-gray-900; }
+
+────────────────────────────── 📄 lib/firebase.js ────────────────────────────── import { initializeApp, getApps } from 'firebase/app'; import { getAuth, signInAnonymously } from 'firebase/auth'; import { getFirestore } from 'firebase/firestore'; import { getStorage } from 'firebase/storage';
+
+const clientConfig = { apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY, authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN, projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID, storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET, messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID, appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID, };
+
+if (!getApps().length) { initializeApp(clientConfig); }
+
+export const auth = getAuth(); export const db = getFirestore(); export const storage = getStorage();
+
+export async function ensureAnon() { try { if (!auth.currentUser) await signInAnonymously(auth); } catch (e) { console.warn('Anon auth failed', e); } }
+
+────────────────────────────── 📄 pages/_app.js ────────────────────────────── import '../styles/globals.css'; import { useEffect } from 'react'; import { ensureAnon } from '../lib/firebase';
+
+export default function App({ Component, pageProps }) { useEffect(() => { ensureAnon(); }, []); return <Component {...pageProps} />; }
+
+────────────────────────────── 📄 pages/index.js ────────────────────────────── import { useEffect, useState } from 'react'; import Image from 'next/image'; import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore'; import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'; import { db, storage } from '../lib/firebase';
+
+export default function Home() { const [file, setFile] = useState(null); const [uploading, setUploading] = useState(false); const [progress, setProgress] = useState(0); const [gallery, setGallery] = useState([]);
+
+useEffect(() => { const q = query(collection(db, 'screenshots'), orderBy('createdAt', 'desc')); const unsub = onSnapshot(q, (snap) => { setGallery(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); }); return () => unsub(); }, []);
+
+async function handleUpload(e) { e.preventDefault(); if (!file) return alert('یک عکس انتخاب کنید'); setUploading(true);
+
+const ext = file.name.split('.').pop();
+const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext || 'jpg'}`;
+const storageRef = ref(storage, `screenshots/${safeName}`);
+
+const uploadTask = uploadBytesResumable(storageRef, file, { contentType: file.type || 'image/jpeg' });
+
+uploadTask.on(
+  'state_changed',
+  (s) => setProgress(Math.round((s.bytesTransferred / s.totalBytes) * 100)),
+  (err) => { console.error(err); setUploading(false); },
+  async () => {
+    const url = await getDownloadURL(uploadTask.snapshot.ref);
+    await addDoc(collection(db, 'screenshots'), {
+      imageUrl: url,
+      filename: file.name,
+      createdAt: serverTimestamp(),
+    });
+    setFile(null);
+    setProgress(0);
+    setUploading(false);
+  }
+);
+
+}
+
+return ( <div className="min-h-screen p-4 sm:p-6 md:p-10"> <div className="max-w-3xl mx-auto"> <header className="mb-6"> <h1 className="text-2xl sm:text-3xl font-bold">گالری وین‌ها</h1> <p className="text-sm text-gray-600">اسکرین‌شات پابجی‌تون رو آپلود کنید تا همه ببینن ✌️</p> </header>
+
+<form onSubmit={handleUpload} className="mb-6 bg-white p-4 rounded-2xl shadow">
+      <label className="block text-sm font-medium text-gray-700">انتخاب عکس</label>
+      <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="mt-2 w-full" />
+      <div className="mt-4 flex items-center gap-3">
+        <button type="submit" className="px-4 py-2 rounded-xl bg-blue-600 text-white disabled:opacity-60" disabled={uploading}>
+          {uploading ? `آپلود (${progress}%)` : 'آپلود کن'}
+        </button>
+        {file && <span className="text-sm text-gray-600 truncate max-w-[50%]">{file.name}</span>}
+      </div>
+      {uploading && (
+        <div className="mt-3 w-full bg-gray-200 rounded-full">
+          <div className="h-2 rounded-full bg-blue-600" style={{ width: `${progress}%` }} />
+        </div>
+      )}
+    </form>
+
+    <section>
+      <h2 className="text-lg font-semibold mb-3">آخرین اسکرین‌شات‌ها</h2>
+      {gallery.length === 0 ? (
+        <p className="text-gray-500">فعلاً عکسی نیست.</p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {gallery.map((item) => (
+            <article key={item.id} className="bg-white rounded-2xl overflow-hidden shadow">
+              <div className="relative w-full h-40">
+                <Image src={item.imageUrl} alt={item.filename || 'screenshot'} fill sizes="(max-width: 768px) 50vw, 33vw" className="object-cover" />
+              </div>
+              <div className="p-2 text-[11px] text-gray-600">
+                {item.createdAt?.toDate ? new Date(item.createdAt.toDate()).toLocaleString() : '—'}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  </div>
+</div>
+
+); }
+
